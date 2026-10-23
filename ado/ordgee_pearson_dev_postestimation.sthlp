@@ -1,5 +1,5 @@
 {smcl}
-{* *! documentation revision E8 23oct2026; executable version 0.2.0}{...}
+{* *! documentation revision E10 23oct2026; executable version 0.2.0}{...}
 {vieweralsosee "ordgee_pearson_dev" "help ordgee_pearson_dev"}{...}
 {vieweralsosee "[R] predict" "help predict"}{...}
 {vieweralsosee "[R] estimates" "help estimates"}{...}
@@ -8,6 +8,7 @@
 {viewerjumpto "predict" "ordgee_pearson_dev_postestimation##predict"}{...}
 {viewerjumpto "estat association" "ordgee_pearson_dev_postestimation##association"}{...}
 {viewerjumpto "estat candidates" "ordgee_pearson_dev_postestimation##candidates"}{...}
+{viewerjumpto "Odds ratios and contrasts" "ordgee_pearson_dev_postestimation##contrasts"}{...}
 {viewerjumpto "Saving and restoring results" "ordgee_pearson_dev_postestimation##restore"}{...}
 {viewerjumpto "Examples" "ordgee_pearson_dev_postestimation##examples"}{...}
 {viewerjumpto "Stored results" "ordgee_pearson_dev_postestimation##results"}{...}
@@ -33,7 +34,7 @@ The following commands are available after {helpb ordgee_pearson_dev}:
 {synopt:{help ordgee_pearson_dev_postestimation##association:{bf:estat association}}}working-correlation and pair diagnostics{p_end}
 {synopt:{help ordgee_pearson_dev_postestimation##candidates:{bf:estat candidates}}}GV profile candidates and ordinary-sandwich intervals{p_end}
 {synopt:{help estimates:{bf:estimates}}}store, save, and restore estimation results{p_end}
-{synopt:{help lincom:{bf:lincom}}}linear combinations and exponentiated contrasts{p_end}
+{synopt:{help ordgee_pearson_dev_postestimation##contrasts:{bf:lincom}}}linear combinations and exponentiated contrasts{p_end}
 {synoptline}
 {p2colreset}{...}
 
@@ -73,14 +74,30 @@ variable and no {opt outcome()}, the lowest category is selected.
 {p_end}
 
 {pstd}
-{cmd:predict double p1 ... pK, pr} returns all category probabilities.
-One variable with {cmd:outcome(#k)} selects a category rank;
-{cmd:outcome(value)} selects its original numeric code.
-One variable without an outcome option defaults to the lowest category.
-{cmd:predict double eta, xb} excludes cutpoints.
-New-data prediction needs the covariates and known factor levels; it does not
-need outcome, ID, or time unless these also enter the mean model.
-Unknown factor levels return an error before creating output variables.
+The K variables returned by {opt pr} follow increasing category codes, listed
+in {cmd:e(categories)}. They are individual-category probabilities, not cumulative
+probabilities. {cmd:outcome(#k)} selects rank k; {cmd:outcome(value)} selects an
+original numeric code. Use new variable names; existing variables are not replaced.
+{p_end}
+
+{pstd}
+By default, predictions are made wherever the required covariates are available,
+including observations excluded from estimation. To restrict predictions after
+fitting to the estimation sample, add {cmd:if e(sample)}. For example, after
+a four-category fit:
+{p_end}
+
+{phang2}
+{cmd:. predict double p1 p2 p3 p4 if e(sample), pr}
+{p_end}
+
+{pstd}
+New-data prediction requires the covariates and known factor levels. It does
+not require outcome, ID, or time unless they enter the mean model. Supply any
+variables used to construct the fitted specification, including generated
+transformations or interactions. Unknown factor levels return an error before
+creating output variables. For results loaded from disk, see the
+{help ordgee_pearson_dev_postestimation##restore:estimation-sample note below}.
 {p_end}
 
 
@@ -132,23 +149,74 @@ returned and displayed table. A finite grid may miss candidates.
 {p_end}
 
 
+{marker contrasts}{...}
+{title:Odds ratios and contrasts}
+
+{pstd}
+After fitting, {cmd:lincom} reports a slope or a linear combination with its
+ordinary-sandwich confidence interval. Add {cmd:or} to exponentiate the estimate
+and interval. For a model containing continuous {cmd:x} and {cmd:i.treatment}:
+{p_end}
+
+{phang2}
+{cmd:. lincom x, or}
+{p_end}
+
+{phang2}
+{cmd:. lincom 1.treatment, or}
+{p_end}
+
+{pstd}
+The first command is the cumulative odds ratio for a one-unit increase in
+{cmd:x}, holding other covariates fixed. The second compares treatment 1 with
+the reference level; it assumes that 0 is the reference in this example.
+Use the actual coefficient names and reference levels from your model.
+{p_end}
+
+{pstd}
+With interactions, a main coefficient alone is generally not the comparison
+at every time or covariate value. Form the appropriate linear combination; the
+{help ordgee_pearson_dev##example_public:public-data example} illustrates a treatment
+contrast at week 6. Cutpoints are thresholds, not covariate odds ratios.
+No estimation-command {cmd:or} option or {cmd:margins} support is provided.
+{p_end}
+
+
 {marker restore}{...}
 {title:Saving and restoring results}
 
 {pstd}
-Saved estimates retain prediction metadata, QLS diagnostics, and available
-candidate tables across {cmd:estimates store/save} and restoration, including
-a fresh Stata session with the companion ado files on the adopath.
-A failed estimation clears e(), preventing stale successful results from being used.
-{cmd:ordgee_pearson_dev, level(90)} replays an existing result.
+{cmd:estimates store} and {cmd:estimates restore} keep results in memory.
+{cmd:estimates save} and {cmd:estimates use} write and read a {cmd:.ster} file.
+Prediction metadata, association diagnostics, and available candidate tables
+are retained. Keep the command and companion files on the ado-path in a new
+session. Use {cmd:ordgee_pearson_dev, level(90)} to redisplay a loaded result.
 {p_end}
 
 {pstd}
-After a failed estimation, {cmd:e()} is empty. Save a fit before trying
-{opt strictpairs} if you want to inspect it afterwards. Restoring an
-incompatible working fit restores its pair diagnostics; it does not make
-the fitted pair tables valid. The public-data example in the
-{help ordgee_pearson_dev##example_public:estimation help} illustrates this workflow.
+Saved estimates do not save the data. Stata sets {cmd:e(sample)} to zero after
+{cmd:estimates use}; it does not automatically recover the original estimation
+rows. If those rows will be needed, generate a sample indicator immediately
+after fitting and save it with the data:
+{p_end}
+
+{phang2}
+{cmd:. generate byte gee_sample = e(sample)}
+{p_end}
+
+{pstd}
+After reloading those same data and saved results, use {cmd:if gee_sample==1}
+for original-sample predictions. To set {cmd:e(sample)} explicitly, see
+{help estimates_save##setting:estimates save/use and e(sample)}. On new data,
+choose the intended prediction rows rather than using an old sample indicator.
+{p_end}
+
+{pstd}
+Failed estimation clears {cmd:e()}. Store or save a successful fit before
+trying {opt strictpairs} if you want to inspect it afterwards. Restoring an
+incompatible working fit also restores its pair diagnostics; it does not make
+its pair tables valid. The
+{help ordgee_pearson_dev##example_public:public-data example} demonstrates this workflow.
 {p_end}
 
 
@@ -160,7 +228,7 @@ After a four-category fit:
 {p_end}
 
 {phang2}
-{cmd:. predict double p1 p2 p3 p4, pr}
+{cmd:. predict double p1 p2 p3 p4 if e(sample), pr}
 {p_end}
 
 {phang2}

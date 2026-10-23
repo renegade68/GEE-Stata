@@ -1,10 +1,12 @@
 {smcl}
-{* *! documentation revision E8 23oct2026; executable version 0.2.0}{...}
+{* *! documentation revision E10 23oct2026; executable version 0.2.0}{...}
 {vieweralsosee "ordgee_pearson_dev postestimation" "help ordgee_pearson_dev_postestimation"}{...}
 {vieweralsosee "[R] ologit" "help ologit"}{...}
 {vieweralsosee "[XT] xtgee" "help xtgee"}{...}
 {viewerjumpto "Syntax" "ordgee_pearson_dev##syntax"}{...}
 {viewerjumpto "Description" "ordgee_pearson_dev##description"}{...}
+{viewerjumpto "Data requirements" "ordgee_pearson_dev##data"}{...}
+{viewerjumpto "Troubleshooting" "ordgee_pearson_dev##troubleshooting"}{...}
 {viewerjumpto "Options" "ordgee_pearson_dev##options"}{...}
 {viewerjumpto "Remarks" "ordgee_pearson_dev##remarks"}{...}
 {viewerjumpto "Examples" "ordgee_pearson_dev##examples"}{...}
@@ -95,7 +97,7 @@ change of method after a failure.
 {p_end}
 
 {phang}
-{opth time(varname)} specifies numeric observation times. ID-time pairs must be unique. Irregular times and unequal numbers of observations per subject are allowed.
+{opth time(varname)} specifies numeric observation times. ID-time pairs must be unique. Irregular times and unequal numbers of observations per subject are allowed. This option identifies visits; it does not add a time effect to the mean model. Include time or its functions among the covariates when required. Exchangeable correlation does not decay with time gaps.
 {p_end}
 
 {phang}
@@ -141,7 +143,7 @@ change of method after a failure.
 {dlgtab:Reporting}
 
 {phang}
-{opt level(#)} sets the confidence level for displayed coefficient intervals, using Stata's current confidence-level setting by default. The variance is the ordinary cluster sandwich; see {help ordgee_pearson_dev##variance:Variance and interpretation}.
+{opt level(#)} sets the confidence level for displayed coefficient intervals, using Stata's current confidence-level setting by default. Standard errors are clustered by the ID variable automatically; no {opt vce()} option is required or supported. The variance is the ordinary cluster sandwich; see {help ordgee_pearson_dev##variance:Variance and interpretation}.
 {p_end}
 
 
@@ -150,6 +152,10 @@ change of method after a failure.
 
 {pstd}
 Remarks are presented under the following headings:
+{p_end}
+
+{phang2}
+{help ordgee_pearson_dev##data:Data requirements}
 {p_end}
 
 {phang2}
@@ -177,7 +183,61 @@ Remarks are presented under the following headings:
 {p_end}
 
 {phang2}
-{help ordgee_pearson_dev##data:Data requirements}
+{help ordgee_pearson_dev##troubleshooting:Troubleshooting}
+{p_end}
+
+
+{marker data}{...}
+{title:Data requirements}
+
+{pstd}
+Use long data: one row per subject and visit, with one ordinal outcome variable.
+{opt id()} may be numeric or string; {opt time()} must be numeric. ID-time pairs
+must be unique within the estimation sample. No {cmd:xtset} declaration is required.
+{p_end}
+
+{pstd}
+The outcome must be numeric, with at least three observed categories in the
+estimation sample. Categories are ordered by their numeric values; value labels
+do not determine the order. Codes need not be consecutive. Recode a string
+outcome deliberately into its substantive order; alphabetical encoding may give
+the wrong order. Inspect the codes with {cmd:tabulate y, nolabel missing}.
+{p_end}
+
+{pstd}
+Unequal cluster sizes, singleton clusters, factor variables, interactions, and
+irregular time values are supported. Nonzero exchangeable association requires
+repeated observations. The number of clusters must exceed the number of fitted
+slopes plus cutpoints; this numerical requirement is not a guarantee that there
+are enough clusters for reliable inference.
+{p_end}
+
+{pstd}
+{opt time()} identifies visits but does not automatically enter the mean model.
+To model a time trend, include time or its functions among the covariates; for
+example, add {cmd:c.visit}. Exchangeable association uses the same between-visit
+parameter for all time gaps. AR(1) and unstructured association are not implemented.
+{p_end}
+
+{pstd}
+Rows with missing outcome, required covariates, ID, or time are excluded within
+the {cmd:if}/{cmd:in} scope; {cmd:e(N_excluded)} reports their number. A subject
+can therefore contribute its remaining complete rows. {cmd:e(N)} and {cmd:e(N_g)}
+report observations and subjects used. This exclusion does not correct informative
+missingness. Caller data and row order are preserved.
+{p_end}
+
+{pstd}
+For example, with variables named {cmd:id}, {cmd:visit}, and {cmd:y}, check
+the intended analysis data before fitting:
+{p_end}
+
+{phang2}
+{cmd:. isid id visit}
+{p_end}
+
+{phang2}
+{cmd:. tabulate y, nolabel missing}
 {p_end}
 
 
@@ -218,7 +278,7 @@ They generally differ. This implementation uses cluster weights w_i=1.
 
 {pstd}
 {cmd:associterate(#)} limits first-stage outer iterations; its QLS default is 300.
-Each inner coefficient fit has the validated fixed limit of 300 iterations.
+Each inner coefficient fit has a fixed limit of 300 iterations.
 QLS therefore rejects {cmd:iterate()}, {cmd:start()}, and {cmd:solver()}.
 {cmd:inititerate(#)} still controls ordered-logit initialization.
 The lower boundary a0=0 is permitted. Degenerate energies, unidentified
@@ -244,15 +304,11 @@ GV uses the Parsons/repolr-type generalized-variance criterion
 logdet(Mref)-2*logdet(B).
 Mref replaces within-observation residual products by model-implied covariances
 and retains empirical products between distinct observations.
-The stabilized implementation separates cluster-average and cluster-deviation
-components before combining them. It evaluates the same mathematical criterion
-and its fixed-coefficient derivatives with less cancellation near rho=1.
 {p_end}
 
 {pstd}
 The default {cmd:solver(alternating)} alternates coefficient fits with
-half-damped rho updates. A 101-point grid brackets admissible conditional
-minima; safeguarded refinement checks derivatives and curvature.
+half-damped rho updates and a grid search for conditional minima.
 The lowest criterion among detected admissible conditional minima is chosen.
 {cmd:start(#)} defaults to .2; {cmd:associterate(#)} defaults to 100.
 {cmd:iterate(#)} defaults to 300 per coefficient fit.
@@ -266,7 +322,7 @@ It does not minimize the total function f(b(rho),rho) along the coefficient path
 Candidates must pass conditional-minimum, coefficient-refit, and covariance
 checks, including a reference-covariance eigenvalue ratio above 1e-8.
 The smallest rho among detected admissible joint candidates is selected.
-This selection rule is unchanged. A finite grid may miss candidates.
+A finite grid may miss candidates.
 {p_end}
 
 {pstd}
@@ -310,12 +366,10 @@ informative-cluster-size weighting, proportional-odds test, or SE for rho.
 {p_end}
 
 {pstd}
-In the archived E2 simulation (10 conditions, 1,000 datasets each; 50 or 150
+In a simulation study (10 conditions, 1,000 datasets each; 50 or 150
 clusters; four categories; up to four visits), QLS coverage for the two primary
 slope coefficients ranged from 92.9% to 96.1% for nominal 95% intervals.
 This is conditional simulation evidence, not a universal coverage guarantee.
-The E3 stabilization and E4 interface tests reuse existing data and are regression
-checks, not additional independent confirmation samples.
 Negative correlations, very few clusters, sparse many-category outcomes, and
 outcome-dependent dropout require further study.
 {p_end}
@@ -389,17 +443,52 @@ conditions stated above remain necessary for inference using working weights.
 {p_end}
 
 
-{marker data}{...}
-{title:Data requirements}
+{marker troubleshooting}{...}
+{title:Troubleshooting}
 
-{pstd}
-At least three observed ordered categories and more clusters than fitted parameters
-are required. Numeric category codes need not be consecutive.
-Numeric/string IDs, unequal cluster sizes, singleton clusters, factor variables,
-interactions, and irregular numeric time values are supported.
-ID-time pairs must be unique. Estimating rho requires repeated observations.
-Missing required values are excluded row by row within the if/in scope;
-{cmd:e(N_excluded)} reports that count. Caller data and row order are preserved.
+{phang}
+{bf:Command or companion file not found}. Keep all eight files in the repository
+{cmd:ado/} folder together, including the three Mata {cmd:.do} files. Add that
+folder with {cmd:adopath ++ "/your/path/GEE-Stata/ado"} and run
+{cmd:which ordgee_pearson_dev}. Restart Stata after replacing an older version.
+{p_end}
+
+{phang}
+{bf:Duplicate ID-time values or too few outcome categories}. Check the intended
+analysis sample, missing values, and category coding. Resolve duplicates according
+to the study design; do not discard records merely to make the command run.
+{p_end}
+
+{phang}
+{bf:Option not allowed}. QLS requires {cmd:corr(exchangeable) rhomethod(qls)}
+and rejects {opt rho()}, {opt solver()}, {opt start()}, and {opt iterate()}.
+Use {opt associterate()} for its outer-iteration limit. Odds ratios are obtained
+after fitting with {cmd:lincom}, not an estimation-command {cmd:or} option.
+Robust standard errors by ID are automatic; {opt vce()} is not supported.
+{p_end}
+
+{phang}
+{bf:Initialization, rank, or convergence failure}. Inspect sparse categories,
+separation, redundant covariates, empty interaction cells, and the number of
+clusters. Review the mean specification. Appropriate iteration limits may help
+a converging calculation, but cannot resolve nonidentification. For GV,
+different starts may reach different solutions and a flat criterion may be
+unidentified; see {help ordgee_pearson_dev##gv:GV computation}.
+{p_end}
+
+{phang}
+{bf:strictpairs rejection}. The selected fit has incompatible ordinal pair
+tables. This is a distinct issue from iteration limits. Save any successful
+working fit before refitting; report the violations and assess whether that
+working-covariance interpretation suits the analysis. Do not silently clip rho
+or present another method as an automatic repair.
+{p_end}
+
+{phang}
+{bf:Reading the error message}. Several input, rank, and pair checks use
+{cmd:r(498)}. Read the accompanying message rather than interpreting the code
+alone. Failed estimation clears {cmd:e()}. Restore a saved result before further
+postestimation commands; see {help ordgee_pearson_dev_postestimation##restore:Saving and restoring results}.
 {p_end}
 
 
@@ -444,8 +533,8 @@ parameter, not a fixed fitted value. Copy the whole block into a do-file.
         id(id) time(visit) corr(exchangeable) ///
         rhomethod(qls) strictpairs
     estat association
-    predict double p1 p2 p3 p4, pr
-    display "Cumulative odds ratio for x: " exp(_b[y:x])
+    predict double p1 p2 p3 p4 if e(sample), pr
+    lincom x, or
     display "Stage-one a0: " e(qls_a0) "   Corrected rho: " e(rho)
     estimates store demo_qls
     ordgee_pearson_dev y c.x i.treatment, ///
@@ -454,6 +543,16 @@ parameter, not a fixed fitted value. Copy the whole block into a do-file.
     estat candidates
     estimates restore demo_qls
 {txt}
+
+{pstd}
+For this generated example, QLS uses 300 observations from 120 subjects,
+with final rho approximately .348720 and zero pair-table violations. The
+coefficient for {cmd:x} is approximately .360096, giving a cumulative odds
+ratio of about 1.43 for a one-unit increase, holding treatment fixed. The
+confidence interval is reported by {cmd:lincom x, or}. These are reproducibility
+values for this example, not population parameters. The optional GV comparison
+fits a separately specified association method; the final line restores QLS.
+{p_end}
 
 
 {marker example_public}{...}
@@ -700,7 +799,6 @@ Repeated measures proportional odds logistic regression analysis of ordinal
 score data in the statistical software package R.
 Computational Statistics & Data Analysis 53:632-641.
 {browse "https://doi.org/10.1016/j.csda.2008.08.004":doi:10.1016/j.csda.2008.08.004}.
-The Mata equations and optimizer are independently written.
 {p_end}
 
 
@@ -709,6 +807,7 @@ The Mata equations and optimizer are independently written.
 
 {pstd}
 Choonjoo Lee
-{break}Ordinal GEE development project. Research version 0.2.0; help revision E8.
+{break}Contact: {browse "mailto:bloom.rampike@gmail.com":bloom.rampike@gmail.com}
+{break}{browse "https://github.com/renegade68/GEE-Stata":GEE-Stata: source, installation, and issue reports}.
 {p_end}
 

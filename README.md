@@ -1,142 +1,151 @@
 # Ordinal GEE for Stata
 
-`ordgee_pearson_dev` fits a population-averaged proportional-odds model to
-repeated ordinal responses using generalized estimating equations (GEE).
-It supports independence, fixed nonnegative exchangeable association, and
-estimated exchangeable Pearson working correlation using two-stage
-quasi-least squares (QLS) or a generalized-variance (GV) criterion.
+`ordgee_pearson_dev` fits a population-averaged proportional-odds model for
+repeated ordinal outcomes. It estimates nonnegative exchangeable Pearson
+working correlation using two-stage quasi-least squares (QLS) or a
+generalized-variance (GV) method. Independence and fixed correlation are also
+available.
 
-This is a research development command. The initial computational baseline is
-**version 0.2.0**, with **E8 help documentation** dated October 23, 2026.
-The command requires **Stata 16.1 or newer** and runs entirely in Stata/Mata;
-no R, Python, or external solver installation is required. Verification to date
-used Stata/MP 16.1 on macOS. Later revisions are identified by Git commit.
+Requires **Stata 16.1 or newer**. No R, Python, or external solver is needed.
+This is research software, version **0.2.0**, tested in Stata/MP 16.1 on macOS.
+Check the model assumptions and diagnostics before interpreting results.
 
-## Install and begin
+## Install
 
-Download or clone this repository. Keep **all eight files in `ado/` together**,
-including the three Mata implementation `.do` files. Add that folder to the
-Stata search path for the current session:
+Use GitHub's **Code → Download ZIP**, extract it, and keep all eight files in
+`ado/` together, including the three `.do` files. In Stata, replace the path below:
 
 ```stata
 adopath ++ "/your/path/GEE-Stata/ado"
 which ordgee_pearson_dev
 help ordgee_pearson_dev
-help ordgee_pearson_dev_postestimation
 ```
 
-Replace the path with your local folder. `which` identifies the copy Stata will
-use if an earlier installation is also present. Start a fresh Stata session
-when switching computational versions. This repository uses a local-folder
-installation and does not provide `net install` metadata. Access to a private
-repository requires permission.
+The path setting applies to this session; include it in your analysis do-file
+for future sessions. After downloading an update, replace the whole `ado/`
+folder and restart Stata. `which` helps identify an older copy taking precedence.
+Installation uses this local folder; `ssc install` and `net install` are not
+provided for this repository.
 
-## Commands and examples
+## Prepare your data
 
-| Task | Command or option | Documentation |
-| --- | --- | --- |
-| Fit the ordinal mean model | `ordgee_pearson_dev` | [code](ado/ordgee_pearson_dev.ado) · [help](ado/ordgee_pearson_dev.sthlp) |
-| Independence | `corr(independent)` | Estimation help |
-| Fixed exchangeable association | `corr(exchangeable) rho(#)` | Estimation help |
-| Estimated exchangeable QLS | `corr(exchangeable) rhomethod(qls)` | Estimation help |
-| Estimated exchangeable GV | `corr(exchangeable) rhomethod(gv)` | Estimation help |
-| Category probabilities or linear predictor | `predict` | [postestimation help](ado/ordgee_pearson_dev_postestimation.sthlp) |
-| Working-association diagnostics | `estat association` | Postestimation help |
-| GV profile candidates | `estat candidates` after `solver(profile)` | Postestimation help |
+Use **one row per subject and visit**. The outcome must have at least three
+observed numeric categories, in the intended ascending order. Labels do not
+determine that order. IDs can be numeric or string; time must be numeric, with
+unique ID-time pairs. Unequal visit counts and irregular times are allowed.
+You do not need to `xtset` the data.
 
-For existing data with outcome `y`, covariate `x`, treatment indicator
-`treatment`, subject identifier `id`, and observation time `visit`:
+`time(visit)` identifies visits; it does not add a time effect to the mean model.
+Include `c.visit`, time indicators, or other justified time terms among the
+covariates if needed. Exchangeable association does not decay with time gaps.
+Rows missing required variables are excluded; inspect `e(N_excluded)` after
+fitting. This does not correct outcome-dependent missingness.
+
+## Run a complete example
+
+The following creates its own four-category data. Save current work first:
+the block clears the data and changes the random seed and estimation results.
 
 ```stata
+clear
+set seed 20261023
+set obs 120
+generate long id = _n
+generate double x = rnormal()
+generate byte treatment = runiform()<.5
+generate byte shared = runiform()<.35
+generate double common_u = runiform()
+generate byte visits = 1+mod(id,4)
+expand 4
+bysort id: generate byte visit = _n
+keep if visit<=visits
+generate double u = cond(shared,common_u,runiform())
+generate double latent = .6*x+.4*treatment+logit(u)
+generate byte y = 1+(latent>-1)+(latent>.2)+(latent>1.3)
+
 ordgee_pearson_dev y c.x i.treatment, ///
-    id(id) time(visit) corr(exchangeable) rhomethod(qls)
+    id(id) time(visit) corr(exchangeable) rhomethod(qls) strictpairs
 estat association
+lincom x, or
+predict double p1 p2 p3 p4 if e(sample), pr
 ```
 
-QLS must be requested explicitly. The default for estimated exchangeable
-association remains GV with the alternating solver. `solver(profile)` selects
-the GV profile search; it is not a QLS option. There is no automatic switch of
-methods after a failed fit.
+Expected results are 300 observations, 120 subjects, final rho about **0.348720**,
+and **zero pair-table violations**. The slope for `x` is about **0.360096**:
+its cumulative odds ratio is approximately **1.43** per unit, holding treatment
+fixed. `lincom` reports the confidence interval. `p1` through `p4` are the
+probabilities of the four individual categories.
 
-The estimation help contains two complete do-file blocks. The first generates
-its own unbalanced four-category data with no download. The second downloads
-the public `schiz.dta` example from
-[Stata Press](https://www.stata-press.com/data/mlmus4.html), or accepts a cached
-copy as an argument. Copy a whole block into the Do-file Editor and run it.
-Save current work first: these examples use `clear` and replace data and
-estimation results. No separate example script is needed.
+## Choose the association method
 
-## Interpret results and check assumptions
+| Choice | Options after the mean-model variables |
+| --- | --- |
+| Estimated QLS, as above | `corr(exchangeable) rhomethod(qls)` |
+| Estimated GV | `corr(exchangeable) rhomethod(gv)` |
+| GV profile search | `corr(exchangeable) rhomethod(gv) solver(profile)` |
+| Fixed correlation, for example .2 | `corr(exchangeable) rho(.2)` |
+| Independence | `corr(independent)` |
 
-The mean model is `Pr(Y <= k | X) = invlogit(c_k - X*b)`. Positive coefficients
-indicate higher categories; `exp(b)` is the population-averaged cumulative odds
-ratio for `Y > k` versus `Y <= k`, common across cutpoints under proportional odds.
+QLS must be explicit: omitting `rhomethod()` for estimated exchangeable
+association uses GV with the alternating solver. QLS does not accept `solver()`,
+`start()`, or `iterate()`; see the help for its iteration controls. Choose a
+method for the analysis and examine sensitivity; the command does not switch
+methods automatically.
 
-The working correlation is separable across visits and cumulative indicators.
-`e(rho)` describes same-cutpoint indicators at different visits, not the Pearson
-correlation of raw category scores. For QLS, `e(qls_a0)` is the first-stage
-association; the corrected `e(rho)` is used for the final coefficients and
-ordinary cluster sandwich variance.
+## Interpret and diagnose
 
-Convergence, positive definiteness, valid single-visit probabilities, and
-compatibility of implied ordinal pair tables are separate checks. Run
-`estat association` and inspect `min_cell` and `bad_pairs`. The default retains
-an incompatible covariance as GEE working weights and reports the violations.
-`strictpairs` rejects the selected final fit with `r(498)` and clears `e()`;
-it neither clips rho nor searches for a replacement. Save a result before
-trying this option if it is needed for subsequent comparison.
+Positive coefficients indicate higher categories. `exp(b)` is the cumulative
+odds ratio for `Y > k` versus `Y <= k`, common across cutpoints under proportional
+odds. With interactions, form the appropriate contrast rather than interpreting
+a main effect alone. Standard errors are clustered by ID automatically, with
+no finite-cluster correction; a `vce()` option is not supported.
 
-Inference requires an adequate marginal mean, independent clusters, enough
-clusters for sandwich asymptotics, suitable covariate exogeneity, and an
-appropriate observation process. The variance has no finite-cluster correction.
-Robust standard errors do not repair mean misspecification or outcome-dependent
-dropout. A pairwise compatibility check does not establish a full joint
-distribution across three or more visits. The help explains the conditions in
-detail.
+`rho` measures association between same-cutpoint cumulative indicators at
+different visits, not raw category scores. QLS reports both first-stage `a0`
+and corrected final `rho`; the latter is used in the reported coefficient fit.
 
-The current implementation does not support negative association, observation
-weights, informative-cluster-size weighting, a standard error for rho, or
-`margins`. Independence-GEE coefficients can agree with `ologit` under the same
-mean and sample, while standard errors differ because of variance conventions.
+Run `estat association`. Numerical convergence and valid single-visit
+probabilities do not ensure valid implied two-visit tables. The default reports
+negative pair cells and retains the matrix as GEE working weights. `strictpairs`
+rejects such a selected fit and clears the active results. Store a successful fit
+before trying it if you need to return to that result. Passing the pair check
+does not establish a full joint distribution over three or more visits.
 
-## Validation status
+Inference needs a suitable proportional-odds mean, independent clusters,
+sufficient clusters, appropriate covariate exogeneity, and a suitable observation
+process. Robust SEs do not correct a misspecified mean or informative dropout.
+Negative, AR(1), and unstructured association, observation weights, a standard
+error for rho, and `margins` are not implemented.
 
-The local development record includes independent equation checks, simulation
-studies, public-data comparisons, prediction and saved-result checks, and
-isolated installation tests. The six executable files here are unchanged from
-the validated 0.2.0 baseline. E8 reorganized the help and preserved its examples
-and interpretation conditions; it did not change the estimator.
+Checks include comparisons with reference equations, simulation studies, and
+worked examples. The help describes the methods and validation limits; those
+checks do not establish performance for every study design.
 
-In the documented `schiz` example (437 patients; 1,603 observations), QLS gives
-final rho approximately .237870 and 270 incompatible pair tables out of 2,234.
-GV with `solver(profile)` gives rho approximately .123674 and no incompatible
-pair tables. These are diagnostics for that specification, not evidence that
-one method is universally superior. Numerical checks and finite simulation
-studies do not establish validity for every research design.
+## Help and problem solving
 
-## Versions and feedback
+- [Estimation help](ado/ordgee_pearson_dev.sthlp): syntax, data preparation,
+  assumptions, troubleshooting, and complete generated- and public-data examples.
+- [Postestimation help](ado/ordgee_pearson_dev_postestimation.sthlp): category
+  prediction, odds ratios, diagnostics, and saving or restoring results.
 
-Computational versions are recorded in source headers; documentation revisions
-are identified separately in the help. Use a Git commit to identify the exact
-combination of files.
+Type `help ordgee_pearson_dev_postestimation` in Stata for formatted help.
+The public-data example downloads Stata Press `schiz.dta`, with an offline
+option. It illustrates a converged QLS working fit whose pair tables fail
+`strictpairs`, so that rejection is expected in that example.
 
-Report issues through [GitHub Issues](https://github.com/renegade68/GEE-Stata/issues).
-Include the Git commit, Stata version, `which ordgee_pearson_dev` output, complete
-command, association diagnostics, and a small reproducible example with expected
-and actual results. Use synthetic data when research data are confidential.
+If a command or Mata file is missing, check the complete `ado/` folder and
+`which` output. For a failed fit, read the error text: `r(498)` has several
+causes. Check duplicate visits, category coding, sparse cells, redundant
+covariates, and cluster counts. Increasing iterations cannot fix every failure.
+The help provides method-specific guidance.
 
-## Attribution and license
+For feedback, use [GitHub Issues](https://github.com/renegade68/GEE-Stata/issues).
+Include the Git commit, Stata version, `which` output, complete command, diagnostic
+output, and a small reproducible example. Synthetic data are welcome.
 
-Author: Choonjoo Lee. Contact: bloom.rampike@gmail.com.
+## Author and license
 
-The repository retains its existing
-[GNU Affero General Public License version 3](LICENSE).
-See [the software notice](LICENSE_CODE.txt). Preserve author and methodological
-attribution. Core references in the help include Liang and Zeger (1986), Shults,
-Ratcliffe and Leonard (2007), Mitani, Kaye and Nelson (2019), and Parsons and
-colleagues (2009). This command uses unweighted clusters and does not implement
-the informative-cluster-size weighting studied by Mitani and colleagues.
-
-The repository contains the command, required implementation files, and help.
-Development archives, reference software, papers, datasets, simulation output,
-raw Stata logs, and local review ZIP files remain outside this code repository.
+Choonjoo Lee — bloom.rampike@gmail.com.
+Licensed under the [GNU Affero General Public License version 3](LICENSE);
+see [the software notice](LICENSE_CODE.txt). Preserve author and method references.
+The help cites the underlying GEE, QLS, and ordinal-association literature.
