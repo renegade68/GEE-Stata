@@ -1,0 +1,20 @@
+# Local operating-system/editor files
+.DS_Store
+._*
+*~
+*.swp
+__pycache__/
+.venv*/
+
+# Data, output, and local review archives
+*.dta
+*.ster
+*.log
+*.smcl
+*.gph
+*.pdf
+*.zip
+results/
+output/
+history/
+tmp/
